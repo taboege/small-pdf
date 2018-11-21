@@ -1,0 +1,181 @@
+#!/usr/bin/env perl
+
+# FIXME:
+#   - The pages have the wrong size and are blurry in qpdfview
+#     (because it scales for some reason?). It's sharp in mupdf.
+#
+# TODO:
+#   - More options: density, resize, jpeg_quality and debug.
+#   - Using {Perl,Graphics::}Magick, we could even have a progressbar.
+
+use v5.10;
+use strict;
+use warnings;
+use autodie;
+use utf8;
+
+use Getopt::Long;
+use Pod::Usage;
+
+use Time::HiRes qw(gettimeofday);
+use Path::Tiny;
+use File::pushd;
+use Sort::Naturally;
+
+#my $density = 0;
+#my $resize = 0;
+#my $jpeg_quality = 0;
+#my $debug = 0;
+
+my ($help, $man);
+GetOptions(
+    #    "d|density=i" => \$density,
+    #    "r|resize=s"  => \$resize,
+    #    "j|jpeg=i"    => \$jpeg_quality,
+    #    "debug"       => \$debug,
+    "h|help"      => \$help,
+    "man"         => \$man,
+) or pod2usage(2);
+pod2usage(1) if $help;
+pod2usage(-exitval => 0, -verbose => 2) if $man;
+
+my $infile  = shift or pod2usage(2);
+my $outfile = shift or pod2usage(2);
+
+my $tmp = Path::Tiny->tempdir;
+die "Something is wrong with the temporary directory. Bailing out!"
+    unless -d $tmp and $tmp->children == 0;
+
+sub time_task {
+    print shift, "... ";
+    my $start = gettimeofday;
+    &{+shift};
+    say sprintf "%.2fs", gettimeofday - $start;
+}
+
+time_task "Splitting input file" => sub {
+    system {'convert'}
+        'convert', $infile,
+        '-units', 'pixels-per-inch',
+        '-density', '72',
+        "$tmp/$infile-%d.png"
+    ;
+};
+
+time_task "Degrading pages" => sub {
+    my $guard = pushd $tmp;
+    system {'mogrify'}
+        'mogrify',
+        '-background', 'white', '-alpha', 'off',
+        '-colors', '256', '-depth', '8', '+dither',
+        '-compress', 'zip', '-strip',
+        $tmp->children(qr/\.png$/)
+    ;
+};
+
+time_task "Joining pages" => sub {
+    system {'img2pdf'}
+        'img2pdf',
+        '--output', $outfile,
+        nsort $tmp->children(qr/\.png$/)
+    ;
+    # or:
+    #system {'pdfjoin'}
+    #    'pdfjoin', '-q',
+    #    '--rotateoversize', 'false',
+    #    '-o', $outfile
+    #;
+};
+
+say sprintf "New size: %.1f%% of input file",
+    100 * (-s $outfile) / (-s $infile);
+
+__END__
+
+=head1 NAME
+
+small-pdf - Degrade PDF files
+
+=head1 SYNOPSIS
+
+small-pdf [options] input.pdf output.pdf
+
+Options:
+
+=begin comment
+
+    -d|--density         ppi to extract pages with
+    -r|--resize          resize pages
+    -j|--jpeg            convert pages to jpeg
+    --debug              debug mode
+
+=end comment
+
+    -h|--help            brief help message
+    --man                full documentation
+
+=head1 OPTIONS
+
+=over 8
+
+=item B<-h|--help>
+
+Print a brief help message and exit.
+
+=item B<--man>
+
+Prints the manual page and exit.
+
+=begin comment
+
+=item B<-d|--density=PPI>
+
+Extract the pages from the PDF with the given I<PPI> resolution.
+
+=item B<-r|--resize=PERCENT>
+
+Resize pages by I<PERCENT>% keeping aspect ratio.
+
+=item B<-j|--jpeg=QUALITY>
+
+By default, the script creates PNG pages with a 256-color palette.
+Use this flag to try JPEG instead with the given quality in 1..100.
+
+=item B<--debug>
+
+In debug mode, the input file is split and filters applied to the
+files. Then the program prints the location of the temporary
+directory and halts for the user to inspect the pages.
+
+=end comment
+
+=back
+
+=head1 DESCRIPTION
+
+Takes a PDF file as input, splits its pages into separate PNGs,
+which are then degraded/optimized for space and joins them
+together again.
+
+The script is useful for lecture notes taken on a tablet, when
+that spits out PDFs containing painfully detailed and large
+vector graphics.
+
+=head1 DEPENDENCIES
+
+This is a Perl script and requires, apart from core modules
+in Perl v5.10+, the Path::Tiny, File::pushd and Sort::Naturally
+modules from CPAN. Furthermore, it needs the C<convert> and
+C<img2pdf> utilities.
+
+A PNG optimizer and other things --- optionally? --- in the
+future, maybe.
+
+=head1 BUGS AND CAVEATS
+
+Yes. Currently, the pages come out too small from C<convert> to
+be suitable for archiving the output of this script over its
+input. For some reason, the pages are blurry, too, and one
+of the pages in my test PDF looks horribly aliased.
+
+=cut

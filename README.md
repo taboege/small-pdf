@@ -3,7 +3,7 @@
 ## SYNOPSIS
 
 ```
-$ small-pdf.sh skript.pdf small.pdf
+$ small-pdf skript.pdf small.pdf
 Splitting input file... 13.30s
 Degrading pages... 2.00s
 Joining pages... 0.22s
@@ -22,8 +22,9 @@ vector graphics.
 
 ## DEPENDENCIES
 
-This is a shell script, it should work with just `/bin/sh`.
-Apart from coreutils, currently only needs the `convert` and
+This is a Perl script and requires, apart from core modules
+in Perl v5.10+, the `Path::Tiny`, `File::pushd` and `Sort::Naturally`
+modules from CPAN. Furthermore, it needs the `convert` and
 `img2pdf` utilities.
 
 A PNG optimizer and other things --- optionally? --- in the
